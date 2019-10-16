@@ -30,6 +30,9 @@ import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 public class MockConsumerTest {
     
@@ -100,4 +103,22 @@ public class MockConsumerTest {
         assertThat(records.isEmpty(), is(true));
     }
 
+    @Test
+    public void testRebalanceListener() {
+        TopicPartition tp1 = new TopicPartition("test", 0);
+        ConsumerRebalanceListener listener = mock(ConsumerRebalanceListener.class);
+
+        consumer.subscribe(Collections.singleton("test"), listener);
+        assertEquals(0, consumer.poll(Duration.ZERO).count());
+
+        consumer.rebalance(Collections.singleton(tp1));
+        verify(listener).onPartitionsAssigned(Collections.singleton(tp1));
+        verify(listener).onPartitionsRevoked(Collections.emptySet());
+
+        TopicPartition tp2 = new TopicPartition("test", 1);
+        consumer.rebalance(Collections.singleton(tp2));
+
+        verify(listener).onPartitionsAssigned(Collections.singleton(tp2));
+        verify(listener).onPartitionsRevoked(argThat(partitions -> partitions.contains(tp1)));
+    }
 }
