@@ -66,6 +66,8 @@ public class MockConsumer<K, V> implements Consumer<K, V> {
     private KafkaException offsetsException;
     private AtomicBoolean wakeup;
     private boolean closed;
+    private boolean needRebalance;
+    private Collection<TopicPartition> previousAssignment;
 
     public MockConsumer(OffsetResetStrategy offsetResetStrategy) {
         this.subscriptions = new SubscriptionState(new LogContext(), offsetResetStrategy);
@@ -79,6 +81,8 @@ public class MockConsumer<K, V> implements Consumer<K, V> {
         this.pollException = null;
         this.wakeup = new AtomicBoolean(false);
         this.committed = new HashMap<>();
+        this.needRebalance = true;
+        this.previousAssignment = Collections.emptySet();
     }
 
     @Override
@@ -88,13 +92,13 @@ public class MockConsumer<K, V> implements Consumer<K, V> {
 
     /** Simulate a rebalance event. */
     public synchronized void rebalance(Collection<TopicPartition> newAssignment) {
+        this.needRebalance = true;
         if (newAssignment == null)
             throw new IllegalArgumentException("newAssignment cannot be null");
 
-        this.subscriptions.rebalanceListener().onPartitionsRevoked(this.subscriptions.assignedPartitions());
         this.records.clear();
+        this.previousAssignment = this.subscriptions.assignedPartitions();
         this.subscriptions.assignFromSubscribed(newAssignment);
-        this.subscriptions.rebalanceListener().onPartitionsAssigned(newAssignment);
     }
 
     @Override
@@ -165,6 +169,12 @@ public class MockConsumer<K, V> implements Consumer<K, V> {
     @Override
     public synchronized ConsumerRecords<K, V> poll(final Duration timeout) {
         ensureNotClosed();
+
+        if (needRebalance) {
+            subscriptions.rebalanceListener().onPartitionsRevoked(previousAssignment);
+            subscriptions.rebalanceListener().onPartitionsAssigned(subscriptions.assignedPartitions());
+            needRebalance = false;
+        }
 
         // Synchronize around the entire execution so new tasks to be triggered on subsequent poll calls can be added in
         // the callback
