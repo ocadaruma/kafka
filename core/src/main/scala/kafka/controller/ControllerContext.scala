@@ -77,9 +77,13 @@ class ControllerContext extends ControllerChannelContext {
   val stats = new ControllerStats
   var offlinePartitionCount = 0
   var preferredReplicaImbalanceCount = 0
-  val shuttingDownBrokerIds = mutable.Set.empty[Int]
-  private val liveBrokers = mutable.Set.empty[Broker]
-  private val liveBrokerEpochs = mutable.Map.empty[Int, Long]
+  private val _shuttingDownBrokerIds = mutable.Set.empty[Int]
+  private val _liveOrShuttingDownBrokers = mutable.Set.empty[Broker]
+  private val _liveOrShuttingDownBrokerEpochs = mutable.Map.empty[Int, Long]
+  // NOTE: This is identical to _liveOrShuttingDownBrokerEpochs.keySet.diff(_shuttingDownBrokerIds).
+  // However, we track live broker IDs separately to avoid the need to compute the diff each time,
+  // which is costly and could be the bottleneck when processing new broker registration. See KAFKA-17061
+  private val _liveBrokerIds = mutable.Set.empty[Int]
   var epoch: Int = KafkaController.InitialControllerEpoch
   var epochZkVersion: Int = KafkaController.InitialControllerEpochZkVersion
 
@@ -195,31 +199,49 @@ class ControllerContext extends ControllerChannelContext {
   }
 
   private def clearLiveBrokers(): Unit = {
-    liveBrokers.clear()
-    liveBrokerEpochs.clear()
+    _liveOrShuttingDownBrokers.clear()
+    _liveOrShuttingDownBrokerEpochs.clear()
+    _liveBrokerIds.clear()
   }
 
   def addLiveBrokers(brokerAndEpochs: Map[Broker, Long]): Unit = {
-    liveBrokers ++= brokerAndEpochs.keySet
-    liveBrokerEpochs ++= brokerAndEpochs.map { case (broker, brokerEpoch) => (broker.id, brokerEpoch) }
+    _liveOrShuttingDownBrokers ++= brokerAndEpochs.keySet
+    val epochs = brokerAndEpochs.map { case (broker, brokerEpoch) => (broker.id, brokerEpoch) }
+    _liveOrShuttingDownBrokerEpochs ++= epochs
+    _liveBrokerIds ++ epochs.keySet
   }
 
   def removeLiveBrokers(brokerIds: Set[Int]): Unit = {
-    liveBrokers --= liveBrokers.filter(broker => brokerIds.contains(broker.id))
-    liveBrokerEpochs --= brokerIds
+    _liveOrShuttingDownBrokers --= _liveOrShuttingDownBrokers.filter(broker => brokerIds.contains(broker.id))
+    _liveOrShuttingDownBrokerEpochs --= brokerIds
+    _liveBrokerIds --= brokerIds
   }
 
   def updateBrokerMetadata(oldMetadata: Broker, newMetadata: Broker): Unit = {
-    liveBrokers -= oldMetadata
-    liveBrokers += newMetadata
+    _liveOrShuttingDownBrokers -= oldMetadata
+    _liveOrShuttingDownBrokers += newMetadata
   }
 
   // getter
-  def liveBrokerIds: Set[Int] = liveBrokerEpochs.keySet.diff(shuttingDownBrokerIds)
-  def liveOrShuttingDownBrokerIds: Set[Int] = liveBrokerEpochs.keySet
-  def liveOrShuttingDownBrokers: Set[Broker] = liveBrokers
-  def liveBrokerIdAndEpochs: Map[Int, Long] = liveBrokerEpochs
+  def liveBrokerIds: Set[Int] = _liveOrShuttingDownBrokerEpochs.keySet.diff(_shuttingDownBrokerIds) // TODO
+  def liveOrShuttingDownBrokerIds: Set[Int] = _liveOrShuttingDownBrokerEpochs.keySet
+  def liveOrShuttingDownBrokers: Set[Broker] = _liveOrShuttingDownBrokers
+  def liveBrokerIdAndEpochs: Map[Int, Long] = _liveOrShuttingDownBrokerEpochs
   def liveOrShuttingDownBroker(brokerId: Int): Option[Broker] = liveOrShuttingDownBrokers.find(_.id == brokerId)
+  def shuttingDownBrokerIds: Set[Int] = _shuttingDownBrokerIds
+
+  def addShuttingDownBroker(brokerId: Int): Unit = {
+    _shuttingDownBrokerIds += brokerId
+    _liveBrokerIds -= brokerId
+  }
+
+  def removeShuttingDownBroker(brokerId: Int): Boolean = {
+    _shuttingDownBrokerIds.remove(brokerId)
+  }
+
+  def clearShuttingDownBrokers(): Unit = {
+    _shuttingDownBrokerIds.clear()
+  }
 
   def partitionsOnBroker(brokerId: Int): Set[TopicPartition] = {
     partitionAssignments.flatMap {
@@ -301,7 +323,7 @@ class ControllerContext extends ControllerChannelContext {
     topicsToBeDeleted.clear()
     topicsWithDeletionStarted.clear()
     topicsIneligibleForDeletion.clear()
-    shuttingDownBrokerIds.clear()
+    _shuttingDownBrokerIds.clear()
     epoch = 0
     epochZkVersion = 0
     clearTopicsState()
