@@ -31,6 +31,7 @@ import org.apache.kafka.storage.internals.log.LogDirFailureChannel
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
 
 import java.util.Comparator
+import java.util.concurrent.atomic.AtomicInteger
 import scala.collection.{Iterable, Seq, mutable}
 import scala.jdk.CollectionConverters._
 
@@ -479,6 +480,7 @@ private[log] class LogCleanerManager(val logDirs: Seq[File],
           throw new IllegalStateException(s"In-progress partition $topicPartition cannot be in $s state.")
       }
     }
+    LogCleanerManager.cleanCount.incrementAndGet()
   }
 
   def doneDeleting(topicPartitions: Iterable[TopicPartition]): Unit = {
@@ -568,16 +570,18 @@ private[log] class LogCleanerManager(val logDirs: Seq[File],
  * @param forceUpdateCheckpoint whether to update the checkpoint associated with this log. if true, checkpoint should be
  *                             reset to firstDirtyOffset
  */
-private case class OffsetsToClean(firstDirtyOffset: Long,
+case class OffsetsToClean(firstDirtyOffset: Long,
                                   firstUncleanableDirtyOffset: Long,
                                   forceUpdateCheckpoint: Boolean = false) {
 }
 
-private[log] object LogCleanerManager extends Logging {
+object LogCleanerManager extends Logging {
   private val UncleanablePartitionsCountMetricName = "uncleanable-partitions-count"
   private val UncleanableBytesMetricName = "uncleanable-bytes"
   private val MaxDirtyPercentMetricName = "max-dirty-percent"
   private val TimeSinceLastRunMsMetricName = "time-since-last-run-ms"
+
+  val cleanCount = new AtomicInteger()
 
   // Visible for testing
   private[log] val GaugeMetricNameNoTag = Set(
@@ -668,7 +672,7 @@ private[log] object LogCleanerManager extends Logging {
       } else None
     ).flatten.min
 
-    debug(s"Finding range of cleanable offsets for log=${log.name}. Last clean offset=$lastCleanOffset " +
+    info(s"Finding range of cleanable offsets for log=${log.name}. Last clean offset=$lastCleanOffset " +
       s"now=$now => firstDirtyOffset=$firstDirtyOffset firstUncleanableOffset=$firstUncleanableDirtyOffset " +
       s"activeSegment.baseOffset=${log.activeSegment.baseOffset}")
 

@@ -23,6 +23,7 @@ import org.apache.kafka.common.requests.FetchResponse
 import org.apache.kafka.server.common.{MetadataVersion, OffsetAndEpoch}
 import org.apache.kafka.storage.internals.log.{LogAppendInfo, LogStartOffsetIncrementReason}
 
+import java.util.concurrent.atomic.AtomicLong
 import scala.collection.mutable
 
 class ReplicaFetcherThread(name: String,
@@ -192,4 +193,8 @@ class ReplicaFetcherThread(name: String,
     val partition = replicaMgr.getPartitionOrException(topicPartition)
     partition.truncateFullyAndStartAt(offset, isFuture = false)
   }
+}
+
+object ReplicaFetcherThread {
+  val sleepMs = new AtomicLong()
 }

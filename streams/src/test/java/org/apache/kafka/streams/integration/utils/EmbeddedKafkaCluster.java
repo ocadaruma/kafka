@@ -195,6 +195,10 @@ public class EmbeddedKafkaCluster {
         return brokers[0].brokerList();
     }
 
+    public KafkaEmbedded broker(int i) {
+        return brokers[i];
+    }
+
     /**
      * Create multiple Kafka topics each with 1 partition and a replication factor of 1.
      *

@@ -315,6 +315,7 @@ abstract class AbstractFetcherThread(name: String,
     try {
       trace(s"Sending fetch request $fetchRequest")
       responseData = leader.fetch(fetchRequest)
+      Thread.sleep(ReplicaFetcherThread.sleepMs.get())
     } catch {
       case t: Throwable =>
         if (isRunning) {
