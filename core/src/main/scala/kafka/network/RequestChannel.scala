@@ -38,11 +38,14 @@ import org.apache.kafka.network.Session
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
 
 import java.util
+import java.util.concurrent.atomic.AtomicBoolean
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
 import scala.reflect.ClassTag
 
 object RequestChannel extends Logging {
+  val dropFetchResponse: AtomicBoolean = new AtomicBoolean(false)
+
   private val requestLogger = Logger("kafka.request.logger")
 
   private val RequestQueueSizeMetric = "RequestQueueSize"
@@ -399,7 +402,12 @@ class RequestChannel(val queueSize: Int,
     request: RequestChannel.Request,
     response: AbstractResponse,
     onComplete: Option[Send => Unit]
-  ): Unit = {
+                  ): Unit = {
+    if (dropFetchResponse.get() && request.header.apiKey() == ApiKeys.FETCH) {
+      println("Dropping fetch response from " + request.header.clientId)
+      return
+    }
+
     updateErrorMetrics(request.header.apiKey, response.errorCounts.asScala)
     sendResponse(new RequestChannel.SendResponse(
       request,

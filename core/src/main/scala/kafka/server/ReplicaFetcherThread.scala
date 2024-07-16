@@ -28,7 +28,7 @@ import scala.collection.mutable
 
 class ReplicaFetcherThread(name: String,
                            leader: LeaderEndPoint,
-                           brokerConfig: KafkaConfig,
+                           val brokerConfig: KafkaConfig,
                            failedPartitions: FailedPartitions,
                            replicaMgr: ReplicaManager,
                            quota: ReplicaQuota,

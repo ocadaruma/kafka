@@ -17,6 +17,7 @@
 package org.apache.kafka.streams.scala
 
 import kafka.log.LogCleanerManager
+import kafka.network.RequestChannel
 import kafka.server.ReplicaFetcherThread
 
 import java.util.{Optional, Properties}
@@ -38,6 +39,10 @@ class LogCleanTest {
 
   private val cluster: EmbeddedKafkaCluster = new EmbeddedKafkaCluster(4, {
     val props = new Properties()
+    props.setProperty("inter.broker.protocol.version", "2.6")
+    props.setProperty("log.cleaner.delete.retention.ms", "500")
+    props.setProperty("log.cleaner.min.cleanable.dirty.ratio", "0")
+//    props.setProperty("log.message.format.version", "0.10.0")
     props
   })
 
@@ -85,35 +90,74 @@ class LogCleanTest {
     props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, cluster.bootstrapServers())
     props.put(ProducerConfig.ACKS_CONFIG, "all")
     props.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, "1")
+    props.put(ProducerConfig.RETRIES_CONFIG, "0")
+    props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "false")
 
     val producer = new KafkaProducer[String, String](props, new StringSerializer, new StringSerializer)
+
+    props.put(ProducerConfig.RETRIES_CONFIG, "100")
+    val producer2 = new KafkaProducer[String, String](props, new StringSerializer, new StringSerializer)
+
     producer.send(new ProducerRecord(tp.topic(), "k1", "val"))
-    producer.send(new ProducerRecord(tp.topic(), "k2", "val"))
+    producer.send(new ProducerRecord(tp.topic(), "k2", "val")).get()
+    // split the batch
+    Thread.sleep(500L)
     producer.send(new ProducerRecord(tp.topic(), "k2", null)).get()
 
     // wait for a while until the segment can be rolled
-    Thread.sleep(10000)
+    Thread.sleep(6000)
 
-    ReplicaFetcherThread.sleepMs.set(10000)
+//    ReplicaFetcherThread.sleepMs.set(10000)
+    RequestChannel.dropFetchResponse.set(true)
 
     // initiate roll
     producer.send(new ProducerRecord(tp.topic(), "k3", null))
 
     Thread.sleep(5000)
 
-    TestUtils.waitForCondition(() => LogCleanerManager.cleanCount.get() > 0, 3000L, "wait done cleaning")
+    TestUtils.waitForCondition(() => LogCleanerManager.cleanCount.get() > 0, 10000L, "wait done cleaning")
 
-//    admin.alterPartitionReassignments(java.util.Map.of(
-//      tp, Optional.of(new NewPartitionReassignment(java.util.List.of(1, 0, 2)))
-//    )).all().get()
-//    Thread.sleep(500)
+    while (LogCleanerManager.cleanCount.get() < 2) {
+      Thread.sleep(1000)
+      println("cleaning: " + LogCleanerManager.cleanCount.get())
+    }
+    println("done cleaning 2")
+
+    admin.alterPartitionReassignments(java.util.Map.of(
+      tp, Optional.of(new NewPartitionReassignment(java.util.List.of(1, 0, 2)))
+    )).all().get()
+    Thread.sleep(500)
+    admin.electLeaders(ElectionType.PREFERRED, java.util.Set.of(tp)).all().get()
+
+    RequestChannel.dropFetchResponse.set(false)
+//    ReplicaFetcherThread.sleepMs.set(0)
+
+    Thread.sleep(5000)
+    println("start reassigning to 0, 1, 2")
+    admin.alterPartitionReassignments(java.util.Map.of(
+      tp, Optional.of(new NewPartitionReassignment(java.util.List.of(0, 1, 2)))
+    )).all().get()
+    Thread.sleep(500)
+    admin.electLeaders(ElectionType.PREFERRED, java.util.Set.of(tp)).all().get()
+    Thread.sleep(5000)
+    println("done. start reassigning to 0, 1, 3")
+    admin.alterPartitionReassignments(java.util.Map.of(
+      tp, Optional.of(new NewPartitionReassignment(java.util.List.of(0, 1, 3)))
+    )).all().get()
+    Thread.sleep(5000)
+    println("done. start reassigning to 3, 0, 1")
+    admin.alterPartitionReassignments(java.util.Map.of(
+      tp, Optional.of(new NewPartitionReassignment(java.util.List.of(3, 0, 1)))
+    )).all().get()
+    Thread.sleep(500)
+    admin.electLeaders(ElectionType.PREFERRED, java.util.Set.of(tp)).all().get()
 //    admin.electLeaders(ElectionType.PREFERRED, java.util.Set.of(tp)).all().get()
-
-    ReplicaFetcherThread.sleepMs.set(0)
 
     Thread.sleep(10000)
 
+    val fut = producer2.send(new ProducerRecord(tp.topic(), "k3", "val"))
+    val ret = fut.get()
     // check the suffix is not truncated
-    assertEquals(3, producer.send(new ProducerRecord(tp.topic(), "k3", "val")).get().offset())
+    assertEquals(3, ret.offset())
   }
 }

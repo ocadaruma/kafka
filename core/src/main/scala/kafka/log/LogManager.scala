@@ -1022,7 +1022,8 @@ class LogManager(logDirs: Seq[File],
    * @throws InconsistentTopicIdException if the topic ID in the log does not match the topic ID provided
    */
   def getOrCreateLog(topicPartition: TopicPartition, isNew: Boolean = false, isFuture: Boolean = false,
-                     topicId: Option[Uuid], targetLogDirectoryId: Option[Uuid] = Option.empty): UnifiedLog = {
+                     topicId: Option[Uuid], targetLogDirectoryId: Option[Uuid] = Option.empty,
+                     brokerId: Int = -1): UnifiedLog = {
     logCreationOrDeletionLock synchronized {
       val log = getLog(topicPartition, isFuture).getOrElse {
         // create the log if it has not already been created in another thread
@@ -1081,7 +1082,8 @@ class LogManager(logDirs: Seq[File],
           logDirFailureChannel = logDirFailureChannel,
           topicId = topicId,
           keepPartitionMetadataFile = keepPartitionMetadataFile,
-          remoteStorageSystemEnable = remoteStorageSystemEnable)
+          remoteStorageSystemEnable = remoteStorageSystemEnable,
+          brokerId = brokerId)
 
         if (isFuture)
           futureLogs.put(topicPartition, log)

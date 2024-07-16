@@ -70,7 +70,8 @@ class LocalLog(@volatile private var _dir: File,
                private[log] val scheduler: Scheduler,
                private[log] val time: Time,
                private[log] val topicPartition: TopicPartition,
-               private[log] val logDirFailureChannel: LogDirFailureChannel) extends Logging {
+               private[log] val logDirFailureChannel: LogDirFailureChannel,
+               val brokerId: Int = -1) extends Logging {
 
   import kafka.log.LocalLog._
 
@@ -204,6 +205,9 @@ class LocalLog(@volatile private var _dir: File,
    * @param endOffset the new end offset of the log
    */
   private[log] def updateLogEndOffset(endOffset: Long): Unit = {
+    if (brokerId == 3 && endOffset == 3) {
+      println("endOffset is updated to 3")
+    }
     nextOffsetMetadata = new LogOffsetMetadata(endOffset, segments.activeSegment.baseOffset, segments.activeSegment.size)
     if (recoveryPoint > endOffset) {
       updateRecoveryPoint(endOffset)

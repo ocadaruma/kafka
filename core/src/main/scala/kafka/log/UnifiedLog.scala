@@ -2007,7 +2007,8 @@ object UnifiedLog extends Logging {
             keepPartitionMetadataFile: Boolean,
             numRemainingSegments: ConcurrentMap[String, Int] = new ConcurrentHashMap[String, Int],
             remoteStorageSystemEnable: Boolean = false,
-            logOffsetsListener: LogOffsetsListener = LogOffsetsListener.NO_OP_OFFSETS_LISTENER): UnifiedLog = {
+            logOffsetsListener: LogOffsetsListener = LogOffsetsListener.NO_OP_OFFSETS_LISTENER,
+            brokerId: Int = -1): UnifiedLog = {
     // create the log directory if it doesn't exist
     Files.createDirectories(dir.toPath)
     val topicPartition = UnifiedLog.parseTopicPartitionName(dir)
@@ -2043,7 +2044,7 @@ object UnifiedLog extends Logging {
       isRemoteLogEnabled,
     ).load()
     val localLog = new LocalLog(dir, config, segments, offsets.recoveryPoint,
-      offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel)
+      offsets.nextOffsetMetadata, scheduler, time, topicPartition, logDirFailureChannel, brokerId)
     new UnifiedLog(offsets.logStartOffset,
       localLog,
       brokerTopicStats,

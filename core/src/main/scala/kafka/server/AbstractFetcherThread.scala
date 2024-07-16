@@ -166,7 +166,19 @@ abstract class AbstractFetcherThread(name: String,
   }
 
   private def maybeTruncate(): Unit = {
+    this match {
+      case thread: ReplicaFetcherThread if thread.brokerConfig.brokerId == 0 => {
+        println(s"Maybe truncate: $clientId")
+      }
+      case _ =>
+    }
     val (partitionsWithEpochs, partitionsWithoutEpochs) = fetchTruncatingPartitions()
+    this match {
+      case thread: ReplicaFetcherThread if thread.brokerConfig.brokerId == 0 => {
+        println(s"truncate: $partitionsWithEpochs, $partitionsWithoutEpochs")
+      }
+      case _ =>
+    }
     if (partitionsWithEpochs.nonEmpty) {
       truncateToEpochEndOffsets(partitionsWithEpochs)
     }
